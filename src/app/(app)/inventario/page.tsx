@@ -1,13 +1,14 @@
+import type { Metadata } from 'next';
 import { InventoryList } from '@/components/inventory/InventoryList';
 import { AddButton } from '@/components/layout/AddButton';
+import { PageHeader } from '@/components/ui/feedback';
+
+export const metadata: Metadata = { title: 'Inventario' };
 
 export default function InventarioPage() {
   return (
     <>
-      <div className="mb-4">
-        <h1 className="text-2xl font-extrabold">Inventario</h1>
-        <p className="text-muted-foreground">Toca un producto para vender o registrar merma</p>
-      </div>
+      <PageHeader title="Inventario" subtitle="Vende o registra merma con un toque" />
       <InventoryList />
       <AddButton />
     </>

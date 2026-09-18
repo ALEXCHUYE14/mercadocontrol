@@ -60,6 +60,8 @@ export interface Product {
   initial_stock: number;
   avg_cost: number;
   sale_price: number;
+  /** Umbral de alerta de stock bajo; 0 = usar el valor por defecto de Ajustes */
+  min_stock: number;
   freshness: FreshnessState;
   entry_date: string;
   expires_at: string | null;
@@ -93,6 +95,77 @@ export interface WasteLog {
   created_at: string;
 }
 
+export type PaymentMethod = 'efectivo' | 'yape' | 'plin' | 'tarjeta' | 'otro' | 'fiado';
+
+/** Métodos con los que se puede COBRAR dinero (el fiado es venta a crédito, no un cobro). */
+export type CashMethod = Exclude<PaymentMethod, 'fiado'>;
+
+export type Role = 'owner' | 'cajero';
+
+/** Cabecera de una venta (un ticket). El detalle vive en SaleItem. */
+export interface Sale {
+  id: string;
+  owner_id: string;
+  /** Correlativo legible del ticket (ej. "000042"), único por dispositivo */
+  ticket_number: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  payment_method: PaymentMethod;
+  subtotal: number;
+  discount: number;
+  total: number;
+  /** Solo en efectivo: lo que entregó el cliente (para calcular el vuelto) */
+  amount_paid: number | null;
+  note: string | null;
+  /** Cliente de la venta (obligatorio en fiado) */
+  customer_id: string | null;
+  /** Quién cobró (nombre), para el equipo */
+  seller_name: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  created_at: string;
+}
+
+export interface Customer {
+  id: string;
+  owner_id: string;
+  name: string;
+  phone: string | null;
+  created_at: string;
+}
+
+export interface CreditPayment {
+  id: string;
+  owner_id: string;
+  customer_id: string;
+  amount: number;
+  payment_method: CashMethod;
+  note: string | null;
+  received_by: string | null;
+  created_at: string;
+}
+
+export interface SaleItem {
+  id: string;
+  sale_id: string;
+  owner_id: string;
+  /** null si el producto se eliminó después; el nombre queda como respaldo del ticket */
+  product_id: string | null;
+  product_name: string;
+  unit: UnitMeasure;
+  quantity: number;
+  unit_price: number;
+  /** Costo promedio al momento de la venta (para la ganancia real); null en ventas antiguas */
+  unit_cost: number | null;
+  subtotal: number;
+  created_at: string;
+}
+
+export interface SaleWithItems {
+  sale: Sale;
+  items: SaleItem[];
+}
+
 export interface DailyClosure {
   id: string;
   owner_id: string;
@@ -124,7 +197,16 @@ export const WASTE_REASONS: WasteReasonMeta[] = [
 ];
 
 // --- Cola de sincronización offline ---
-export type SyncEntity = 'products' | 'inventory_logs' | 'waste_logs' | 'daily_closures' | 'profiles';
+export type SyncEntity =
+  | 'products'
+  | 'inventory_logs'
+  | 'waste_logs'
+  | 'daily_closures'
+  | 'profiles'
+  | 'sales'
+  | 'sale_items'
+  | 'customers'
+  | 'credit_payments';
 export type SyncOp = 'insert' | 'update' | 'delete';
 
 export interface SyncMutation {

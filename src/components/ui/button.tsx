@@ -5,22 +5,23 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-base font-semibold ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] select-none',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-base font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] select-none',
   {
     variants: {
       variant: {
-        primary: 'bg-fresco text-fresco-fg hover:bg-fresco/90 shadow-sm',
+        primary: 'bg-fresco text-fresco-fg hover:bg-fresco/90 shadow-glow',
         forest: 'bg-bosque text-bosque-fg hover:bg-bosque/90 shadow-sm',
         warn: 'bg-atencion text-atencion-fg hover:bg-atencion/90 shadow-sm',
         danger: 'bg-alerta text-alerta-fg hover:bg-alerta/90 shadow-sm',
         outline: 'border-2 border-border bg-card hover:bg-secondary text-foreground',
         ghost: 'hover:bg-secondary text-foreground',
+        soft: 'bg-fresco/10 text-fresco hover:bg-fresco/15',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
       },
       size: {
         // Todos cumplen el mínimo táctil (>=48-56px)
         default: 'min-h-touch px-5 py-3',
-        lg: 'min-h-[64px] px-6 py-4 text-touch-lg',
+        lg: 'min-h-[60px] px-6 py-4 text-lg font-bold',
         sm: 'min-h-[48px] px-4 py-2 text-sm',
         icon: 'h-14 w-14',
       },
@@ -34,8 +35,8 @@ export interface ButtonProps
     VariantProps<typeof buttonVariants> {}
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => (
-    <button ref={ref} className={cn(buttonVariants({ variant, size, className }))} {...props} />
+  ({ className, variant, size, type = 'button', ...props }, ref) => (
+    <button ref={ref} type={type} className={cn(buttonVariants({ variant, size, className }))} {...props} />
   )
 );
 Button.displayName = 'Button';

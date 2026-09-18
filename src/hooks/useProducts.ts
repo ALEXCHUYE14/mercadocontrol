@@ -3,6 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addProduct,
+  archiveProduct,
+  updateProduct,
+  type ProductPatch,
   getActiveProducts,
   getCategories,
   getTodayMetrics,
@@ -11,13 +14,10 @@ import {
   sellProduct,
   type NewProductInput,
 } from '@/lib/db/repository';
+import { checkoutSale, voidSale, type CheckoutInput } from '@/lib/db/sales';
 import type { WasteReason } from '@/types';
 
-const KEYS = {
-  products: ['products'] as const,
-  categories: ['categories'] as const,
-  metrics: ['metrics', 'today'] as const,
-};
+import { KEYS } from '@/hooks/queryKeys';
 
 export function useProducts() {
   return useQuery({
@@ -42,11 +42,16 @@ export function useTodayMetrics() {
   });
 }
 
-function useInvalidate() {
+export function useInvalidate() {
   const qc = useQueryClient();
   return () => {
     qc.invalidateQueries({ queryKey: KEYS.products });
     qc.invalidateQueries({ queryKey: KEYS.metrics });
+    qc.invalidateQueries({ queryKey: KEYS.sales });
+    qc.invalidateQueries({ queryKey: KEYS.report });
+    qc.invalidateQueries({ queryKey: KEYS.credit });
+    qc.invalidateQueries({ queryKey: KEYS.customers });
+    qc.invalidateQueries({ queryKey: KEYS.reports });
   };
 }
 
@@ -72,6 +77,38 @@ export function useSell() {
   return useMutation({
     mutationFn: (v: { productId: string; quantity: number; unitPrice?: number }) =>
       sellProduct(v.productId, v.quantity, v.unitPrice),
+    onSuccess: invalidate,
+  });
+}
+
+export function useVoidSale() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (v: { saleId: string; reason: string }) => voidSale(v.saleId, v.reason),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateProduct() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (v: { productId: string; patch: ProductPatch }) => updateProduct(v.productId, v.patch),
+    onSuccess: invalidate,
+  });
+}
+
+export function useArchiveProduct() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (productId: string) => archiveProduct(productId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCheckout() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (input: CheckoutInput) => checkoutSale(input),
     onSuccess: invalidate,
   });
 }

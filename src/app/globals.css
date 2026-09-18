@@ -4,32 +4,59 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;      /* Slate-50  #F8FAFC */
-    --foreground: 222 47% 11%;      /* Slate-900 #0F172A */
+    --background: 150 22% 96%;      /* verde-gris muy suave */
+    --foreground: 165 30% 9%;       /* casi negro verdoso */
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 165 30% 9%;
 
-    --primary: 160 84% 39%;         /* Emerald-500 #10B981 */
+    --primary: 160 84% 39%;         /* Emerald-500 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96%;       /* Slate-100 */
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 150 18% 93%;
+    --secondary-foreground: 165 30% 12%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 150 18% 93%;
+    --muted-foreground: 165 10% 38%; /* contraste AA sobre blanco y sobre el fondo */
 
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 150 18% 93%;
+    --accent-foreground: 165 30% 12%;
 
-    --destructive: 0 84% 60%;       /* Red-500 #EF4444 */
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
+    --border: 150 14% 88%;
+    --input: 150 12% 82%;
     --ring: 160 84% 39%;
 
-    --radius: 0.9rem;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 165 28% 6%;
+    --foreground: 150 20% 94%;
+
+    --card: 165 22% 10%;
+    --card-foreground: 150 20% 94%;
+
+    --primary: 160 70% 45%;
+    --primary-foreground: 165 30% 6%;
+
+    --secondary: 165 16% 16%;
+    --secondary-foreground: 150 20% 94%;
+
+    --muted: 165 16% 16%;
+    --muted-foreground: 160 10% 68%;
+
+    --accent: 165 16% 16%;
+    --accent-foreground: 150 20% 94%;
+
+    --destructive: 0 72% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 165 14% 20%;
+    --input: 165 14% 28%;
+    --ring: 160 70% 45%;
   }
 
   * {
@@ -37,28 +64,40 @@
   }
 
   html {
-    /* Evita el zoom accidental al tocar inputs en móvil */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    scroll-behavior: smooth;
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: 'rlig' 1, 'calt' 1;
-    /* Respeta las zonas seguras de dispositivos con notch */
-    padding-bottom: env(safe-area-inset-bottom);
-    /* Selección desactivada para una sensación más "app nativa" */
+    @apply bg-background font-sans text-foreground antialiased;
+    font-size: 1rem;
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Tipografía base algo más grande: legibilidad bajo luz solar */
-  body {
-    font-size: 1.0625rem;
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Números alineados en tablas/tarjetas */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer utilities {
-  /* Área táctil garantizada para cualquier control interactivo */
   .touch-target {
     @apply min-h-touch min-w-touch;
   }
@@ -69,5 +108,10 @@
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* Respeta notch / barra de gestos */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
   }
 }

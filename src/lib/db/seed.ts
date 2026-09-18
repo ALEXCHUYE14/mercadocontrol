@@ -1,17 +1,15 @@
 'use client';
 
 // =============================================================================
-// Semilla local: garantiza categorías y (en modo demo) productos de ejemplo,
-// para que la app sea usable de inmediato aun sin backend configurado.
+// Semilla local: categorías globales (necesarias para usar la app sin conexión)
+// y productos de ejemplo OPCIONALES (los carga el usuario a propósito).
 // =============================================================================
 
 import { db } from '@/lib/db/dexie';
+import { currentOwnerId } from '@/lib/db/internal';
 import { computeFreshness } from '@/lib/logic/freshness';
-import { hasBackend } from '@/lib/supabase/client';
 import { uuid } from '@/lib/utils';
 import type { Category, Product } from '@/types';
-
-const DEMO_OWNER = 'local-demo-user';
 
 const GLOBAL_CATEGORIES: Omit<Category, 'id' | 'created_at' | 'updated_at'>[] = [
   { owner_id: null, name: 'Frutas', icon: '🍎', color: '#EF4444', avg_shelf_life_days: 5, yellow_threshold: 0.45, red_threshold: 0.75 },
@@ -31,12 +29,12 @@ function daysAgoISO(days: number): string {
 let seeding: Promise<void> | null = null;
 
 /**
- * Idempotente y seguro ante llamadas simultáneas (React StrictMode monta los
- * efectos dos veces en desarrollo y duplicaría categorías/productos).
+ * Garantiza las categorías globales. Idempotente y seguro ante llamadas simultáneas
+ * (React StrictMode monta los efectos dos veces en desarrollo y las duplicaría).
  */
 export function ensureSeed(): Promise<void> {
   if (!seeding) {
-    seeding = runSeed().catch((err) => {
+    seeding = seedCategories().catch((err) => {
       seeding = null; // permite reintentar si IndexedDB falló
       throw err;
     });
@@ -44,72 +42,58 @@ export function ensureSeed(): Promise<void> {
   return seeding;
 }
 
-async function runSeed(): Promise<void> {
-  // Owner por defecto en modo local
-  const owner = await db().meta.get('owner_id');
-  if (!owner) await db().meta.put({ key: 'owner_id', value: DEMO_OWNER });
+async function seedCategories(): Promise<void> {
+  await db().transaction('rw', db().categories, async () => {
+    if ((await db().categories.count()) > 0) return;
+    const now = new Date().toISOString();
+    await db().categories.bulkPut(
+      GLOBAL_CATEGORIES.map((c) => ({ ...c, id: uuid(), created_at: now, updated_at: now }))
+    );
+  });
+}
 
-  // Perfil demo
-  const prof = await db().profiles.get(DEMO_OWNER);
-  if (!prof) {
-    await db().profiles.put({
-      id: DEMO_OWNER,
-      full_name: 'Comerciante',
-      stall_name: 'Mi Puesto',
-      stall_type: 'frutas_verduras',
-      phone: null,
-      money_saved: 0,
-      currency: 'PEN',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-  }
+const DEMO_PRODUCTS: Array<{
+  name: string;
+  catName: string;
+  unit: Product['unit'];
+  stock: number;
+  cost: number;
+  price: number;
+  daysAgo: number;
+}> = [
+  { name: 'Tomate', catName: 'Verduras', unit: 'kg', stock: 18, cost: 2.2, price: 3.5, daysAgo: 3 },
+  { name: 'Plátano de seda', catName: 'Frutas', unit: 'kg', stock: 25, cost: 1.8, price: 3.0, daysAgo: 4 },
+  { name: 'Papa blanca', catName: 'Tubérculos', unit: 'saco', stock: 4, cost: 60, price: 85, daysAgo: 6 },
+  { name: 'Culantro', catName: 'Hierbas', unit: 'atado', stock: 30, cost: 0.4, price: 1.0, daysAgo: 2 },
+  { name: 'Palta fuerte', catName: 'Frutas', unit: 'kg', stock: 12, cost: 4.5, price: 7.0, daysAgo: 5 },
+  { name: 'Arroz extra', catName: 'Abarrotes', unit: 'saco', stock: 8, cost: 150, price: 175, daysAgo: 20 },
+];
 
-  // Categorías
-  const catCount = await db().categories.count();
-  const cats: Category[] = [];
-  if (catCount === 0) {
-    for (const c of GLOBAL_CATEGORIES) {
-      const full: Category = {
-        ...c,
-        id: uuid(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      cats.push(full);
-    }
-    await db().categories.bulkPut(cats);
-  }
-
-  // Productos demo: solo en modo 100% local. Con backend configurado se subirían
-  // datos de ejemplo a la cuenta real del usuario.
-  const prodCount = await db().products.count();
-  if (prodCount === 0 && !hasBackend()) {
-    const allCats = cats.length ? cats : await db().categories.toArray();
-    const byName = (n: string) => allCats.find((c) => c.name === n);
-
-    const demo: Array<Partial<Product> & { name: string; catName: string; daysAgo: number }> = [
-      { name: 'Tomate', catName: 'Verduras', unit: 'kg', current_stock: 18, avg_cost: 2.2, sale_price: 3.5, daysAgo: 3 },
-      { name: 'Plátano de seda', catName: 'Frutas', unit: 'kg', current_stock: 25, avg_cost: 1.8, sale_price: 3.0, daysAgo: 4 },
-      { name: 'Papa blanca', catName: 'Tubérculos', unit: 'saco', current_stock: 4, avg_cost: 60, sale_price: 85, daysAgo: 6 },
-      { name: 'Culantro', catName: 'Hierbas', unit: 'atado', current_stock: 30, avg_cost: 0.4, sale_price: 1.0, daysAgo: 2 },
-      { name: 'Palta fuerte', catName: 'Frutas', unit: 'kg', current_stock: 12, avg_cost: 4.5, sale_price: 7.0, daysAgo: 5 },
-      { name: 'Arroz extra', catName: 'Abarrotes', unit: 'saco', current_stock: 8, avg_cost: 150, sale_price: 175, daysAgo: 20 },
-    ];
-
-    const products: Product[] = demo.map((d) => {
-      const cat = byName(d.catName);
+/**
+ * Carga productos de ejemplo en local para el dueño actual (solo modo local: no se
+ * sincronizan). Devuelve cuántos agregó; 0 si ya tenía productos.
+ */
+export async function loadDemoProducts(): Promise<number> {
+  await ensureSeed();
+  let added = 0;
+  await db().transaction('rw', [db().meta, db().categories, db().products], async () => {
+    const owner = await currentOwnerId();
+    if ((await db().products.where('owner_id').equals(owner).count()) > 0) return;
+    const cats = await db().categories.toArray();
+    const products: Product[] = DEMO_PRODUCTS.map((d) => {
+      const cat = cats.find((c) => c.name === d.catName);
       const base: Product = {
         id: uuid(),
-        owner_id: DEMO_OWNER,
+        owner_id: owner,
         category_id: cat?.id ?? null,
         name: d.name,
         batch_code: `L-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
-        unit: d.unit as Product['unit'],
-        current_stock: d.current_stock!,
-        initial_stock: d.current_stock!,
-        avg_cost: d.avg_cost!,
-        sale_price: d.sale_price!,
+        unit: d.unit,
+        current_stock: d.stock,
+        initial_stock: d.stock,
+        avg_cost: d.cost,
+        sale_price: d.price,
+        min_stock: 0,
         freshness: 'verde',
         entry_date: daysAgoISO(d.daysAgo),
         expires_at: null,
@@ -122,5 +106,7 @@ async function runSeed(): Promise<void> {
       return base;
     });
     await db().products.bulkPut(products);
-  }
+    added = products.length;
+  });
+  return added;
 }

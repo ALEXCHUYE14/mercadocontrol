@@ -1,12 +1,18 @@
 import type { Metadata, Viewport } from 'next';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
-import { BottomNav } from '@/components/layout/BottomNav';
-import { TopBar } from '@/components/layout/TopBar';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
+
+const sans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
-  title: 'MercadoControl',
-  description: 'Gestiona tu puesto: inventario, frescura y mermas. Funciona sin internet.',
+  title: { default: 'MercadoControl', template: '%s · MercadoControl' },
+  description: 'Gestiona tu puesto: inventario, ventas con ticket, frescura y mermas. Funciona sin internet.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -15,26 +21,23 @@ export const metadata: Metadata = {
   },
 };
 
+// Se permite el zoom (accesibilidad): antes estaba bloqueado con maximumScale=1
 export const viewport: Viewport = {
   themeColor: '#065F46',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es-PE" suppressHydrationWarning>
-      <body className="min-h-screen bg-background">
-        <Providers>
-          <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col">
-            <TopBar />
-            <main className="flex-1 px-4 pb-28 pt-4">{children}</main>
-            <BottomNav />
-          </div>
-        </Providers>
+    <html lang="es-PE" className={sans.variable} suppressHydrationWarning>
+      <head>
+        {/* Aplica el tema guardado antes del primer pintado (evita parpadeo) */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="min-h-dvh bg-background">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

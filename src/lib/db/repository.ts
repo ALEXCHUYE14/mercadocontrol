@@ -14,6 +14,18 @@
 // =============================================================================
 
 import { db } from '@/lib/db/dexie';
+import {
+  assertCan,
+  assertNonNegative,
+  assertPositive,
+  currentOwnerId,
+  currentRole,
+  enqueue,
+  nowISO,
+} from '@/lib/db/internal';
+import { getSettings } from '@/lib/db/settings';
+import { isLowStock } from '@/lib/logic/stock';
+import { checkoutSale, getSalesSince } from '@/lib/db/sales';
 import { requestSync } from '@/lib/db/sync';
 import { computeFreshness } from '@/lib/logic/freshness';
 import { inventoryValue, weightedAvgCost } from '@/lib/logic/pricing';
@@ -24,32 +36,13 @@ import {
   type DailyClosure,
   type InventoryLog,
   type Product,
-  type SyncEntity,
-  type SyncOp,
+  type SaleWithItems,
   type UnitMeasure,
   type WasteLog,
   type WasteReason,
 } from '@/types';
 
-const DEFAULT_OWNER = 'local-demo-user';
 const STOCK_EPS = 1e-6;
-
-function nowISO() {
-  return new Date().toISOString();
-}
-
-async function currentOwnerId(): Promise<string> {
-  const meta = await db().meta.get('owner_id');
-  return typeof meta?.value === 'string' && meta.value ? meta.value : DEFAULT_OWNER;
-}
-
-function assertPositive(n: number, label: string): void {
-  if (!Number.isFinite(n) || n <= 0) throw new Error(`${label} debe ser mayor que 0`);
-}
-
-function assertNonNegative(n: number, label: string): void {
-  if (!Number.isFinite(n) || n < 0) throw new Error(`${label} no puede ser negativo`);
-}
 
 /** Clasifica un producto con el semáforo "en vivo" (no confía en el valor guardado). */
 function liveFreshness(p: Product, cats: Map<string, Category>) {
@@ -62,7 +55,10 @@ function liveFreshness(p: Product, cats: Map<string, Category>) {
 export async function getActiveProducts(): Promise<Product[]> {
   const owner = await currentOwnerId();
   const items = await db().products.where('owner_id').equals(owner).toArray();
-  return items.filter((p) => p.is_active).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  return items
+    .filter((p) => p.is_active)
+    .map((p) => ({ ...p, min_stock: Number(p.min_stock) || 0 })) // productos anteriores a la alerta de stock
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
 export async function getCategories(): Promise<Category[]> {
@@ -89,6 +85,8 @@ export interface NewProductInput {
   quantity: number;      // stock inicial
   unit_cost: number;     // costo unitario de compra
   sale_price: number;
+  /** Alerta de stock bajo (0 = usar el valor por defecto de Ajustes) */
+  min_stock?: number;
   batch_code?: string | null;
   expires_at?: string | null;
   photo_url?: string | null;
@@ -102,6 +100,8 @@ export async function addProduct(input: NewProductInput): Promise<Product> {
   assertPositive(input.quantity, 'La cantidad');
   assertNonNegative(input.unit_cost, 'El costo');
   assertNonNegative(input.sale_price, 'El precio de venta');
+  const minStock = input.min_stock ?? 0;
+  assertNonNegative(minStock, 'El stock mínimo');
 
   const quantity = round3(input.quantity);
   let product!: Product;
@@ -110,6 +110,7 @@ export async function addProduct(input: NewProductInput): Promise<Product> {
     'rw',
     [db().meta, db().categories, db().products, db().inventory_logs, db().syncQueue],
     async () => {
+      await assertCan('editInventory');
       const owner = await currentOwnerId();
       const cat = input.category_id ? await db().categories.get(input.category_id) : undefined;
       const now = nowISO();
@@ -125,6 +126,7 @@ export async function addProduct(input: NewProductInput): Promise<Product> {
         initial_stock: quantity,
         avg_cost: input.unit_cost,
         sale_price: input.sale_price,
+        min_stock: round3(minStock),
         freshness: 'verde',
         entry_date: now,
         expires_at: input.expires_at ?? null,
@@ -173,6 +175,7 @@ export async function restockProduct(
     'rw',
     [db().meta, db().products, db().inventory_logs, db().syncQueue],
     async () => {
+      await assertCan('editInventory');
       const owner = await currentOwnerId();
       const p = await db().products.get(productId);
       if (!p) throw new Error('Producto no encontrado');
@@ -206,52 +209,66 @@ export async function restockProduct(
   requestSync();
 }
 
-/** Registra una venta (salida) y descuenta stock. */
+export interface ProductPatch {
+  name: string;
+  category_id: string | null;
+  sale_price: number;
+  min_stock: number;
+}
+
+/**
+ * Edita datos comerciales del producto. No toca stock ni costo (esos cambian solo con
+ * movimientos), y solo viajan al servidor los campos editados.
+ */
+export async function updateProduct(productId: string, patch: ProductPatch): Promise<Product> {
+  const name = patch.name.trim().replace(/\s+/g, ' ');
+  if (!name) throw new Error('El nombre del producto es obligatorio');
+  assertNonNegative(patch.sale_price, 'El precio de venta');
+  assertNonNegative(patch.min_stock, 'El stock mínimo');
+  let updated!: Product;
+
+  await db().transaction('rw', [db().meta, db().products, db().syncQueue], async () => {
+    await assertCan('editInventory');
+    const owner = await currentOwnerId();
+    const p = await db().products.get(productId);
+    if (!p || p.owner_id !== owner) throw new Error('Producto no encontrado');
+    const fields = {
+      name,
+      category_id: patch.category_id,
+      sale_price: patch.sale_price,
+      min_stock: round3(patch.min_stock),
+    };
+    updated = { ...p, ...fields, updated_at: nowISO() };
+    await db().products.put(updated);
+    await enqueue('products', 'update', { id: p.id, owner_id: owner, ...fields });
+  });
+  requestSync();
+  return updated;
+}
+
+/** "Elimina" un producto: se archiva (deja de mostrarse) pero el historial de ventas se conserva. */
+export async function archiveProduct(productId: string): Promise<void> {
+  await db().transaction('rw', [db().meta, db().products, db().syncQueue], async () => {
+    await assertCan('editInventory');
+    const owner = await currentOwnerId();
+    const p = await db().products.get(productId);
+    if (!p || p.owner_id !== owner) throw new Error('Producto no encontrado');
+    await db().products.put({ ...p, is_active: false, updated_at: nowISO() });
+    await enqueue('products', 'update', { id: p.id, owner_id: owner, is_active: false });
+  });
+  requestSync();
+}
+
+/**
+ * Venta rápida de un solo producto. Genera un ticket como cualquier venta
+ * (usa checkoutSale, así todas las ventas quedan con número y detalle).
+ */
 export async function sellProduct(
   productId: string,
   quantity: number,
   unitPrice?: number
-): Promise<void> {
-  assertPositive(quantity, 'La cantidad');
-  if (unitPrice !== undefined) assertNonNegative(unitPrice, 'El precio');
-  const qty = round3(quantity);
-
-  await db().transaction(
-    'rw',
-    [db().meta, db().products, db().inventory_logs, db().syncQueue],
-    async () => {
-      const owner = await currentOwnerId();
-      const p = await db().products.get(productId);
-      if (!p) throw new Error('Producto no encontrado');
-      if (qty > p.current_stock + STOCK_EPS) {
-        throw new Error(`Solo quedan ${p.current_stock} ${p.unit} de ${p.name}`);
-      }
-      const now = nowISO();
-
-      const updated: Product = {
-        ...p,
-        current_stock: Math.max(0, round3(p.current_stock - qty)),
-        updated_at: now,
-      };
-      const log: InventoryLog = {
-        id: uuid(),
-        owner_id: owner,
-        product_id: productId,
-        movement: 'salida',
-        quantity: qty,
-        unit_cost: null,
-        unit_price: unitPrice ?? p.sale_price,
-        note: 'Venta',
-        source: 'manual',
-        created_at: now,
-      };
-
-      await db().products.put(updated);
-      await db().inventory_logs.put(log);
-      await enqueue('inventory_logs', 'insert', log); // el trigger del servidor descuenta el stock
-    }
-  );
-  requestSync();
+): Promise<SaleWithItems> {
+  return checkoutSale({ items: [{ productId, quantity, unitPrice }] });
 }
 
 /** Registro de merma "a un tap". Calcula pérdida y acumula dinero salvado. */
@@ -269,6 +286,7 @@ export async function registerWaste(
     'rw',
     [db().meta, db().products, db().waste_logs, db().profiles, db().syncQueue],
     async () => {
+      await assertCan('waste');
       const owner = await currentOwnerId();
       const p = await db().products.get(productId);
       if (!p) throw new Error('Producto no encontrado');
@@ -329,6 +347,8 @@ export async function recalcAllFreshness(): Promise<boolean> {
     [db().meta, db().categories, db().products, db().syncQueue],
     async () => {
       const owner = await currentOwnerId();
+      // El cajero no puede modificar productos en el servidor (RLS); solo el dueño sincroniza el semáforo
+      const canSync = (await currentRole()) === 'owner';
       const cats = await getCategoryMap();
       const products = await db().products.where('owner_id').equals(owner).toArray();
       for (const p of products) {
@@ -338,7 +358,7 @@ export async function recalcAllFreshness(): Promise<boolean> {
         const now = nowISO();
         await db().products.put({ ...p, freshness: state, updated_at: now });
         // Solo el semáforo viaja al servidor (nunca el stock, que lo manejan los logs)
-        await enqueue('products', 'update', { id: p.id, owner_id: p.owner_id, freshness: state });
+        if (canSync) await enqueue('products', 'update', { id: p.id, owner_id: p.owner_id, freshness: state });
         changed++;
       }
     }
@@ -357,6 +377,7 @@ export interface DayMetrics {
   redCount: number;
   yellowCount: number;
   greenCount: number;
+  lowStockCount: number;
 }
 
 const LOSS_REASONS = new Set<WasteReason>(
@@ -369,16 +390,22 @@ export async function getTodayMetrics(): Promise<DayMetrics> {
   startOfDay.setHours(0, 0, 0, 0);
   const from = startOfDay.getTime();
 
-  const [logs, wastes, products, cats] = await Promise.all([
+  const [logs, sales, wastes, products, cats, settings] = await Promise.all([
     db().inventory_logs.where('owner_id').equals(owner).toArray(),
+    getSalesSince(from),
     db().waste_logs.where('owner_id').equals(owner).toArray(),
     db().products.where('owner_id').equals(owner).toArray(),
     getCategoryMap(),
+    getSettings(),
   ]);
 
-  const totalSales = logs
-    .filter((l) => l.movement === 'salida' && new Date(l.created_at).getTime() >= from)
-    .reduce((s, l) => s + l.quantity * (l.unit_price ?? 0), 0);
+  // Ventas con ticket (ya consideran descuentos) + ventas históricas anteriores a los
+  // tickets, que solo existen como movimientos de salida (los del POS llevan source='pos').
+  const ticketSales = sales.reduce((sum, s) => sum + s.total, 0);
+  const legacySales = logs
+    .filter((l) => l.movement === 'salida' && l.source !== 'pos' && new Date(l.created_at).getTime() >= from)
+    .reduce((sum, l) => sum + l.quantity * (l.unit_price ?? 0), 0);
+  const totalSales = ticketSales + legacySales;
 
   // Solo cuenta como pérdida lo que realmente se botó/consumió; ñapa y remate
   // recuperan valor (la UI los muestra como "Valor rescatado").
@@ -387,10 +414,11 @@ export async function getTodayMetrics(): Promise<DayMetrics> {
     .reduce((s, w) => s + w.monetary_loss, 0);
 
   let inventoryCapital = 0;
-  let red = 0, yellow = 0, green = 0;
+  let red = 0, yellow = 0, green = 0, low = 0;
   for (const p of products) {
     if (!p.is_active) continue;
     inventoryCapital += inventoryValue(p.current_stock, p.avg_cost);
+    if (isLowStock(p, settings.lowStockDefault)) low++;
     // Productos agotados no requieren acción: no cuentan en el semáforo
     if (p.current_stock <= 0) continue;
     const state = liveFreshness(p, cats);
@@ -406,6 +434,7 @@ export async function getTodayMetrics(): Promise<DayMetrics> {
     redCount: red,
     yellowCount: yellow,
     greenCount: green,
+    lowStockCount: low,
   };
 }
 
@@ -416,6 +445,7 @@ export async function saveClosure(note?: string): Promise<DailyClosure> {
   let closure!: DailyClosure;
 
   await db().transaction('rw', [db().meta, db().daily_closures, db().syncQueue], async () => {
+    await assertCan('closure');
     const owner = await currentOwnerId();
     const existing = (await db().daily_closures.where('owner_id').equals(owner).toArray()).find(
       (c) => c.closure_date === closure_date
@@ -438,17 +468,4 @@ export async function saveClosure(note?: string): Promise<DailyClosure> {
   });
   requestSync();
   return closure;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers internos
-// ---------------------------------------------------------------------------
-async function enqueue(entity: SyncEntity, op: SyncOp, payload: object) {
-  await db().syncQueue.add({
-    entity,
-    op,
-    payload: payload as Record<string, unknown>,
-    createdAt: Date.now(),
-    tries: 0,
-  });
 }

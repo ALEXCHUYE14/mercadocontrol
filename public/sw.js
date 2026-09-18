@@ -10,11 +10,11 @@
  *    Dexie vacíe su cola de mutaciones hacia Supabase.
  */
 
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.3.1';
 const APP_SHELL = `mc-shell-${VERSION}`;
 const STATIC = `mc-static-${VERSION}`;
 
-const SHELL_URLS = ['/', '/inventario', '/mermas', '/cierre', '/remates', '/manifest.json'];
+const SHELL_URLS = ['/', '/login', '/inventario', '/ventas', '/fiados', '/mermas', '/cierre', '/remates', '/reportes', '/ajustes', '/img/portada.jpg', '/manifest.json'];
 const NAVIGATION_TIMEOUT_MS = 4000;
 
 self.addEventListener('install', (event) => {
@@ -55,6 +55,7 @@ function isStaticAsset(url) {
   return (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||
+    url.pathname.startsWith('/img/') ||
     url.pathname === '/manifest.json'
   );
 }

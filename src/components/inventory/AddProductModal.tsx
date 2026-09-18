@@ -26,6 +26,7 @@ export function AddProductModal({ open, onClose }: { open: boolean; onClose: () 
   const [qtyEdit, setQtyEdit] = useState<string | null>(null);
   const [costEdit, setCostEdit] = useState<string | null>(null);
   const [price, setPrice] = useState('');
+  const [minStockText, setMinStockText] = useState('');
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -51,7 +52,7 @@ export function AddProductModal({ open, onClose }: { open: boolean; onClose: () 
 
   const reset = () => {
     setNameEdit(null); setCategoryId(null); setUnitEdit(null);
-    setQtyEdit(null); setCostEdit(null); setPrice(''); setDone(false); setError(null);
+    setQtyEdit(null); setCostEdit(null); setPrice(''); setMinStockText(''); setDone(false); setError(null);
     speech.reset();
   };
   const handleClose = () => {
@@ -78,6 +79,7 @@ export function AddProductModal({ open, onClose }: { open: boolean; onClose: () 
         unit_cost: costNum,
         // Sin precio de venta se sugiere un margen del 30% sobre el costo
         sale_price: priceNum >= 0 ? priceNum : Math.round(costNum * 1.3 * 100) / 100,
+        min_stock: parseFloat(minStockText) >= 0 ? parseFloat(minStockText) : 0,
         source: speech.transcript ? 'voz' : 'manual',
       });
       setDone(true);
@@ -180,6 +182,21 @@ export function AddProductModal({ open, onClose }: { open: boolean; onClose: () 
               <label className="mb-1 block text-sm font-semibold text-muted-foreground">Venta/u</label>
               <Input type="number" inputMode="decimal" min={0} step="any" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="S/" />
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-muted-foreground">
+              Avisarme cuando queden (opcional)
+            </label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="any"
+              value={minStockText}
+              onChange={(e) => setMinStockText(e.target.value)}
+              placeholder="Ej. 5 (vacío = valor por defecto)"
+            />
           </div>
 
           {error && <p className="rounded-lg bg-alerta/10 px-3 py-2 text-sm font-semibold text-alerta">{error}</p>}

@@ -9,10 +9,14 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   Category,
+  CreditPayment,
+  Customer,
   DailyClosure,
   InventoryLog,
   Product,
   Profile,
+  Sale,
+  SaleItem,
   SyncMutation,
   WasteLog,
 } from '@/types';
@@ -24,6 +28,10 @@ export class MercadoControlDB extends Dexie {
   inventory_logs!: Table<InventoryLog, string>;
   waste_logs!: Table<WasteLog, string>;
   daily_closures!: Table<DailyClosure, string>;
+  sales!: Table<Sale, string>;
+  sale_items!: Table<SaleItem, string>;
+  customers!: Table<Customer, string>;
+  credit_payments!: Table<CreditPayment, string>;
   syncQueue!: Table<SyncMutation, number>;
   meta!: Table<{ key: string; value: unknown }, string>;
 
@@ -39,6 +47,16 @@ export class MercadoControlDB extends Dexie {
       // ++id -> autoincrement; ordenamos por createdAt al drenar la cola
       syncQueue: '++id, entity, op, createdAt',
       meta: 'key',
+    });
+    // v2: ventas con detalle (tickets). Solo agrega tablas; los datos previos se conservan.
+    this.version(2).stores({
+      sales: 'id, owner_id, created_at',
+      sale_items: 'id, sale_id, owner_id, product_id',
+    });
+    // v3: clientes y abonos (fiado). Solo agrega tablas.
+    this.version(3).stores({
+      customers: 'id, owner_id, name',
+      credit_payments: 'id, owner_id, customer_id, created_at',
     });
   }
 }

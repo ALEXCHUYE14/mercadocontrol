@@ -6,11 +6,23 @@
 
 import type { Category, Product } from '@/types';
 import { computeFreshness } from '@/lib/logic/freshness';
+import { DEFAULT_LOW_STOCK, lowStockProducts } from '@/lib/logic/stock';
 import { formatPEN, formatQty } from '@/lib/utils';
 
-/** Enlace wa.me con el texto ya codificado. */
-export function waLink(text: string, phone?: string): string {
-  const base = phone ? `https://wa.me/${phone.replace(/\D/g, '')}` : 'https://wa.me/';
+/**
+ * Normaliza un teléfono para wa.me (solo dígitos con código de país).
+ * Un celular peruano de 9 dígitos recibe el prefijo 51. Devuelve null si no parece válido.
+ */
+export function normalizePhone(phone: string | null | undefined): string | null {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  if (digits.length === 9) return `51${digits}`;
+  return digits.length >= 10 && digits.length <= 15 ? digits : null;
+}
+
+/** Enlace wa.me con el texto ya codificado (a un contacto si el teléfono es válido). */
+export function waLink(text: string, phone?: string | null): string {
+  const normalized = normalizePhone(phone);
+  const base = normalized ? `https://wa.me/${normalized}` : 'https://wa.me/';
   return `${base}?text=${encodeURIComponent(text)}`;
 }
 
@@ -47,21 +59,20 @@ export function buildRemateCatalog(
 }
 
 /**
- * Lista de pedido al mayorista: productos con stock por debajo de un umbral.
+ * Lista de pedido al mayorista: productos en o por debajo de su stock mínimo
+ * (el propio del producto, o `lowStockThreshold` si no tiene).
  */
 export function buildWholesalerOrder(
   products: Product[],
   opts: { lowStockThreshold?: number; stallName?: string } = {}
 ): { text: string; count: number } {
-  const threshold = opts.lowStockThreshold ?? 5;
-  const low = products
-    .filter((p) => p.is_active && p.current_stock <= threshold)
-    .sort((a, b) => a.current_stock - b.current_stock);
+  const low = lowStockProducts(products, opts.lowStockThreshold ?? DEFAULT_LOW_STOCK);
 
-  const header = `📝 *PEDIDO MAYORISTA${opts.stallName ? ' · ' + opts.stallName : ''}*\n${new Date().toLocaleDateString('es-PE')}\n`;
+  const NL = '\n';
+  const header = `📝 *PEDIDO MAYORISTA${opts.stallName ? ' · ' + opts.stallName : ''}*${NL}${new Date().toLocaleDateString('es-PE')}${NL}`;
   const lines = low.map((p) => `• ${p.name} (quedan ${formatQty(p.current_stock)} ${p.unit})`);
   const text = low.length
-    ? `${header}\n${lines.join('\n')}`
+    ? `${header}${NL}${lines.join(NL)}`
     : 'No hay productos por reponer. Stock saludable ✅';
 
   return { text, count: low.length };

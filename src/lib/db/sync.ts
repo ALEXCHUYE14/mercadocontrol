@@ -53,11 +53,14 @@ export async function drainQueue(): Promise<{ pushed: number; pending: number }>
     const { data: sessionData } = await sb.auth.getSession();
     const userId = sessionData.session?.user.id;
     if (!userId) return { pushed: 0, pending: await pendingCount() };
+    // Un cajero escribe con el id del DUEÑO del puesto (owner_id), no con el suyo
+    const ownerMeta = await db().meta.get('owner_id');
+    const allowedOwners = new Set<unknown>([userId, ownerMeta?.value]);
 
     const items = await db().syncQueue.orderBy('createdAt').toArray();
     for (const item of items) {
       if (item.tries >= MAX_TRIES) continue;              // inspección manual
-      if (ownerOf(item) !== userId) continue;             // datos de otro dueño/demo local
+      if (!allowedOwners.has(ownerOf(item))) continue;    // datos de otro dueño/demo local
 
       try {
         await pushOne(sb, item);
@@ -93,9 +96,9 @@ async function pushOne(sb: SupabaseClient, item: SyncMutation) {
     return;
   }
 
-  // Actualización parcial de productos (solo semáforo): un upsert fallaría por
-  // las columnas NOT NULL ausentes, y no debe tocar el stock.
-  if (entity === 'products' && op === 'update') {
+  // Actualización parcial (semáforo/edición de productos, datos del perfil, anulación de ventas): un upsert fallaría
+  // por las columnas NOT NULL ausentes y podría pisar stock o dinero salvado.
+  if ((entity === 'products' || entity === 'profiles' || entity === 'sales') && op === 'update') {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, owner_id, ...patch } = payload;
     const { error } = await sb.from(entity).update(patch).eq('id', id as string);
@@ -137,7 +140,8 @@ async function fetchAll(sb: SupabaseClient, table: string, ownerId: string | nul
  */
 async function pullCategories(sb: SupabaseClient): Promise<void> {
   const rows = await fetchAll(sb, 'categories', null); // globales + propias (RLS filtra)
-  if (!rows) return;
+  // Una respuesta vacía indica sesión inválida o RLS: nunca borrar las locales por eso
+  if (!rows || rows.length === 0) return;
 
   const serverIds = new Set(rows.map((r) => r.id as string));
   const serverByName = new Map(
@@ -169,17 +173,30 @@ async function pullCategories(sb: SupabaseClient): Promise<void> {
 }
 
 /** Baja datos frescos del servidor a Dexie (al iniciar sesión / recuperar red). */
-export async function pullFromServer(ownerId: string): Promise<boolean> {
+export async function pullFromServer(userId: string, ownerId: string): Promise<boolean> {
   const sb = getSupabase();
   if (!sb || typeof navigator === 'undefined' || !navigator.onLine) return false;
 
   try {
+    // Sin sesión válida del mismo usuario, RLS devolvería vacío: no se toca lo local
+    const { data: sessionData } = await sb.auth.getSession();
+    if (sessionData.session?.user.id !== userId) return false;
+
     await pullCategories(sb);
 
     // Con cambios locales pendientes, bajar datos los sobrescribiría.
     if ((await pendingCount()) > 0) return false;
 
-    for (const t of ['products', 'inventory_logs', 'waste_logs', 'daily_closures'] as const) {
+    for (const t of [
+      'products',
+      'inventory_logs',
+      'waste_logs',
+      'daily_closures',
+      'customers',
+      'sales',
+      'sale_items',
+      'credit_payments',
+    ] as const) {
       const rows = await fetchAll(sb, t, ownerId);
       if (!rows) continue;
       await db().table(t).bulkPut(rows);

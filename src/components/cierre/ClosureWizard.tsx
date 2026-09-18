@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Check, ChevronRight, Moon, Send, TrendingUp, Trash2, Wallet } from 'lucide-react';
 import { useCategories, useProducts, useTodayMetrics } from '@/hooks/useProducts';
+import { useProfile, useSettings } from '@/hooks/useSales';
 import { saveClosure } from '@/lib/db/repository';
 import { buildWholesalerOrder, waLink } from '@/lib/logic/whatsapp';
 import { computeFreshness } from '@/lib/logic/freshness';
@@ -23,6 +24,8 @@ export function ClosureWizard() {
   const { data: products } = useProducts();
   const { data: categories } = useCategories();
   const { data: metrics } = useTodayMetrics();
+  const { data: settings } = useSettings();
+  const { data: profile } = useProfile();
 
   // Semáforo "en vivo" (igual que las tarjetas del inventario), no el valor guardado
   const urgent = useMemo(() => {
@@ -37,8 +40,11 @@ export function ClosureWizard() {
   }, [products, categories]);
 
   const order = useMemo(
-    () => buildWholesalerOrder(products ?? [], { lowStockThreshold: 5 }),
-    [products]
+    () => buildWholesalerOrder(products ?? [], {
+        lowStockThreshold: settings?.lowStockDefault,
+        stallName: profile?.stall_name ?? undefined,
+      }),
+    [products, settings?.lowStockDefault, profile?.stall_name]
   );
 
   const finish = async () => {
@@ -58,7 +64,7 @@ export function ClosureWizard() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <Moon className="h-6 w-6 text-bosque" />
+        <Moon className="h-6 w-6 text-emerald-700 dark:text-emerald-300" />
         <h1 className="text-2xl font-extrabold">Cierre del día</h1>
       </div>
 
