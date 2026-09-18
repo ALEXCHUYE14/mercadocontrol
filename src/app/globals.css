@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;      /* Slate-50  #F8FAFC */
+    --foreground: 222 47% 11%;      /* Slate-900 #0F172A */
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --primary: 160 84% 39%;         /* Emerald-500 #10B981 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;       /* Slate-100 */
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;       /* Red-500 #EF4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 160 84% 39%;
+
+    --radius: 0.9rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    /* Evita el zoom accidental al tocar inputs en móvil */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    /* Respeta las zonas seguras de dispositivos con notch */
+    padding-bottom: env(safe-area-inset-bottom);
+    /* Selección desactivada para una sensación más "app nativa" */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Tipografía base algo más grande: legibilidad bajo luz solar */
+  body {
+    font-size: 1.0625rem;
+  }
+}
+
+@layer utilities {
+  /* Área táctil garantizada para cualquier control interactivo */
+  .touch-target {
+    @apply min-h-touch min-w-touch;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
