@@ -9,7 +9,7 @@ import {
   getTicketBusiness,
   saveSettings,
   updateProfile,
-  type AppSettings,
+  type SettingsPatch,
   type ProfilePatch,
 } from '@/lib/db/settings';
 
@@ -50,7 +50,7 @@ function useInvalidateSettings() {
 export function useSaveSettings() {
   const invalidate = useInvalidateSettings();
   return useMutation({
-    mutationFn: (patch: Partial<AppSettings>) => saveSettings(patch),
+    mutationFn: (patch: SettingsPatch) => saveSettings(patch),
     onSuccess: invalidate,
   });
 }

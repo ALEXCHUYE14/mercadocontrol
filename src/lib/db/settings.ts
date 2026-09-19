@@ -8,6 +8,7 @@
 import { db } from '@/lib/db/dexie';
 import { assertCan, currentOwnerId, enqueue, nowISO } from '@/lib/db/internal';
 import { requestSync } from '@/lib/db/sync';
+import { isValidQrDataUrl } from '@/lib/media/qrImage';
 import { DEFAULT_LOW_STOCK } from '@/lib/logic/stock';
 import { DEFAULT_TICKET_FOOTER, type PaperWidth, type TicketBusiness } from '@/lib/logic/ticket';
 import type { Profile } from '@/types';
@@ -16,6 +17,12 @@ export interface SavedPrinter {
   /** Id del dispositivo Bluetooth (estable en este navegador) */
   id: string;
   name: string;
+}
+
+/** QR de cobro por billetera digital (imagen en data URL). null = no configurado. */
+export interface PaymentQr {
+  yape: string | null;
+  plin: string | null;
 }
 
 export interface AppSettings {
@@ -29,6 +36,8 @@ export interface AppSettings {
   bluetoothPrinter: SavedPrinter | null;
   /** Enviar comando de corte al terminar (solo si la impresora tiene cortador) */
   autoCut: boolean;
+  /** Códigos QR para que el cliente escanee al pagar con Yape / Plin */
+  paymentQr: PaymentQr;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -39,6 +48,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lowStockDefault: DEFAULT_LOW_STOCK,
   bluetoothPrinter: null,
   autoCut: false,
+  paymentQr: { yape: null, plin: null },
 };
 
 function sanitize(raw: unknown): AppSettings {
@@ -57,6 +67,11 @@ function sanitize(raw: unknown): AppSettings {
         ? { id: r.bluetoothPrinter.id, name: String(r.bluetoothPrinter.name ?? 'Impresora').slice(0, 60) }
         : null,
     autoCut: r.autoCut === true,
+    // Solo imágenes válidas y de tamaño razonable; cualquier otra cosa se descarta
+    paymentQr: {
+      yape: isValidQrDataUrl(r.paymentQr?.yape) ? r.paymentQr.yape : null,
+      plin: isValidQrDataUrl(r.paymentQr?.plin) ? r.paymentQr.plin : null,
+    },
   };
 }
 
@@ -65,8 +80,16 @@ export async function getSettings(): Promise<AppSettings> {
   return sanitize(meta?.value);
 }
 
-export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
-  const next = sanitize({ ...(await getSettings()), ...patch });
+/** Cambios parciales; `paymentQr` también es parcial (subir Yape no borra Plin). */
+export type SettingsPatch = Partial<Omit<AppSettings, 'paymentQr'>> & { paymentQr?: Partial<PaymentQr> };
+
+export async function saveSettings(patch: SettingsPatch): Promise<AppSettings> {
+  const current = await getSettings();
+  const next = sanitize({
+    ...current,
+    ...patch,
+    paymentQr: { ...current.paymentQr, ...patch.paymentQr },
+  });
   await db().meta.put({ key: 'settings', value: next });
   return next;
 }

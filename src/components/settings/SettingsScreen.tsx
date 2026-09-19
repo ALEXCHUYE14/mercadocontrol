@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/input';
 import { AppearanceCard } from '@/components/settings/AppearanceCard';
+import { PaymentQrCard } from '@/components/settings/PaymentQrCard';
 import { PrinterCard } from '@/components/settings/PrinterCard';
 import { SecurityCard } from '@/components/settings/SecurityCard';
 import { TeamCard } from '@/components/settings/TeamCard';
@@ -36,6 +37,7 @@ export function SettingsScreen() {
       ) : (
         <div className="space-y-5">
           <BusinessForm profile={profile ?? null} settings={settings} role={role} />
+          <PaymentQrCard />
           <PrinterCard />
           <AppearanceCard />
           <SecurityCard />

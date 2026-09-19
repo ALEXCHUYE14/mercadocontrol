@@ -8,6 +8,8 @@ import { Field, Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ErrorNote } from '@/components/ui/feedback';
 import { CustomerPicker } from '@/components/credit/CustomerPicker';
+import { PaymentQrPanel } from '@/components/sales/PaymentQrPanel';
+import { useSettings } from '@/hooks/useSales';
 import { useCheckout } from '@/hooks/useProducts';
 import { cartTotals, cashChange, parseMoney, quickCashOptions, lineSubtotal } from '@/lib/logic/cart';
 import { PAYMENT_METHODS } from '@/lib/logic/ticket';
@@ -38,6 +40,7 @@ export function CartSheet(props: CartSheetProps) {
 
 function CartBody({ entries, products, onChange, onClose, onSold }: CartSheetProps) {
   const checkout = useCheckout();
+  const { data: settings } = useSettings();
   const [method, setMethod] = useState<PaymentMethod>('efectivo');
   const [discountText, setDiscountText] = useState('');
   const [receivedText, setReceivedText] = useState('');
@@ -188,6 +191,11 @@ function CartBody({ entries, products, onChange, onClose, onSold }: CartSheetPro
             ))}
           </div>
         </fieldset>
+
+        {/* Yape / Plin: QR propio para que el cliente escanee */}
+        {(method === 'yape' || method === 'plin') && (
+          <PaymentQrPanel method={method} qr={settings?.paymentQr[method] ?? null} total={totals.total} />
+        )}
 
         {/* Efectivo: recibido y vuelto */}
         {method === 'efectivo' && (
