@@ -64,6 +64,56 @@ function api(): BluetoothApi | null {
   return ((navigator as unknown as { bluetooth?: BluetoothApi }).bluetooth) ?? null;
 }
 
+export type BluetoothUnsupportedReason = 'ios' | 'insecure' | 'no-api';
+export type BluetoothSupport = { ok: true } | { ok: false; reason: BluetoothUnsupportedReason };
+
+/** Datos del entorno que deciden si hay Bluetooth web (separado para poder probarlo). */
+export interface BluetoothEnv {
+  userAgent: string;
+  platform: string;
+  maxTouchPoints: number;
+  isSecureContext: boolean;
+  hasBluetoothApi: boolean;
+}
+
+/**
+ * Explica POR QUÉ no hay Bluetooth web (para mostrar la ayuda correcta):
+ *  - ios: iPhone/iPad no lo permiten en ningún navegador salvo apps como Bluefy.
+ *  - insecure: la página no está en HTTPS (ni localhost).
+ *  - no-api: navegador sin la función (Firefox, Safari de escritorio…).
+ */
+export function detectBluetoothSupport(env: BluetoothEnv): BluetoothSupport {
+  if (env.hasBluetoothApi && env.isSecureContext) return { ok: true };
+  // iPadOS 13+ se presenta como Mac: se distingue por la pantalla táctil
+  const isIos = /iPhone|iPad|iPod/i.test(env.userAgent) || (env.platform === 'MacIntel' && env.maxTouchPoints > 1);
+  if (isIos && !env.hasBluetoothApi) return { ok: false, reason: 'ios' };
+  if (!env.isSecureContext) return { ok: false, reason: 'insecure' };
+  return { ok: false, reason: 'no-api' };
+}
+
+export function bluetoothSupport(): BluetoothSupport {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return { ok: false, reason: 'no-api' };
+  return detectBluetoothSupport({
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints ?? 0,
+    isSecureContext: window.isSecureContext,
+    hasBluetoothApi: 'bluetooth' in navigator,
+  });
+}
+
+/** Texto de ayuda para cada motivo (sin tecnicismos). */
+export function bluetoothHelpMessage(reason: BluetoothUnsupportedReason): string {
+  switch (reason) {
+    case 'ios':
+      return 'iPhone y iPad no permiten Bluetooth desde Safari ni Chrome. Para imprimir por Bluetooth abre MercadoControl en el navegador gratuito «Bluefy» (App Store) con el enlace de abajo, o usa «Imprimir con el sistema / PDF».';
+    case 'insecure':
+      return 'El Bluetooth necesita una conexión segura (https). Abre la app desde su dirección https o usa «Imprimir con el sistema / PDF».';
+    case 'no-api':
+      return 'Este navegador no incluye Bluetooth web. Abre MercadoControl en Chrome o Edge (Android o PC) o usa «Imprimir con el sistema / PDF».';
+  }
+}
+
 export function isBluetoothSupported(): boolean {
   return api() !== null;
 }

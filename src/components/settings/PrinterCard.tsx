@@ -1,15 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Bluetooth, BluetoothOff, Printer, Unlink } from 'lucide-react';
+import { Bluetooth, Printer, Unlink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ErrorNote } from '@/components/ui/feedback';
+import { BluetoothHelp } from '@/components/ticket/BluetoothHelp';
 import { useSaveSettings, useTicketBusiness } from '@/hooks/useSales';
 import {
   BluetoothPrintError,
   disconnectPrinter,
-  isBluetoothSupported,
+  bluetoothSupport,
   pairPrinter,
   printBytes,
 } from '@/lib/print/bluetooth';
@@ -26,7 +27,8 @@ export function PrinterCard() {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  const supported = isBluetoothSupported();
+  const bt = bluetoothSupport();
+  const supported = bt.ok;
   const printer = ctx?.settings.bluetoothPrinter ?? null;
   const paper = ctx?.settings.paperWidth ?? 80;
 
@@ -141,13 +143,7 @@ export function PrinterCard() {
             </p>
           </>
         ) : (
-          <div className="flex items-start gap-3 rounded-2xl bg-atencion/10 p-3 text-sm">
-            <BluetoothOff className="mt-0.5 h-5 w-5 shrink-0 text-atencion" />
-            <p>
-              Este navegador no permite imprimir por Bluetooth desde la web (requiere Chrome o Edge y conexión segura
-              HTTPS). Puedes imprimir con el diálogo del sistema o guardar en PDF.
-            </p>
-          </div>
+          !bt.ok && <BluetoothHelp reason={bt.reason} />
         )}
 
         <Button variant="outline" className="w-full" onClick={testSystem} disabled={busy !== null || !ctx}>

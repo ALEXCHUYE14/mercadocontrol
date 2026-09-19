@@ -9,7 +9,8 @@ import { ErrorNote, Segmented, Spinner } from '@/components/ui/feedback';
 import { useSaveSettings, useTicketBusiness } from '@/hooks/useSales';
 import { useVoidSale } from '@/hooks/useProducts';
 import { can } from '@/lib/auth/permissions';
-import { BluetoothPrintError, isBluetoothSupported, pairPrinter, printBytes } from '@/lib/print/bluetooth';
+import { BluetoothPrintError, bluetoothSupport, pairPrinter, printBytes } from '@/lib/print/bluetooth';
+import { BluetoothHelp } from '@/components/ticket/BluetoothHelp';
 import { encodeTicketEscpos, rawbtUrl } from '@/lib/print/escpos';
 import { printHtml } from '@/lib/print/printHtml';
 import {
@@ -46,6 +47,7 @@ function TicketBody({ initial, onClose, justSold }: { initial: SaleWithItems; on
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<null | 'system' | 'bluetooth'>(null);
   const [error, setError] = useState<string | null>(null);
+  const [btHelp, setBtHelp] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [reason, setReason] = useState('');
   const copyTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -59,7 +61,7 @@ function TicketBody({ initial, onClose, justSold }: { initial: SaleWithItems; on
   const cols = paper === 58 ? 32 : 42;
   const text = useMemo(() => (ticket ? formatTicketText(ticket, cols) : ''), [ticket, cols]);
   const savedPrinter = ctx?.settings.bluetoothPrinter ?? null;
-  const btSupported = isBluetoothSupported();
+  const bt = bluetoothSupport();
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const canVoid = can(role, 'voidSale') && !data.sale.voided_at && !justSold;
 
@@ -83,6 +85,11 @@ function TicketBody({ initial, onClose, justSold }: { initial: SaleWithItems; on
 
   const printBluetooth = async () => {
     if (!ticket || !ctx) return;
+    // Sin Bluetooth web (iPhone, http…) se explica en vez de fallar o esconder el botón
+    if (!bt.ok) {
+      setBtHelp(true);
+      return;
+    }
     setError(null);
     setBusy('bluetooth');
     try {
@@ -195,7 +202,8 @@ function TicketBody({ initial, onClose, justSold }: { initial: SaleWithItems; on
         <ErrorNote message={error} />
 
         <div className="grid grid-cols-2 gap-2">
-          {btSupported ? (
+          {/* El botón de Bluetooth SIEMPRE se muestra: si el dispositivo no lo soporta, explica qué hacer */}
+          {bt.ok ? (
             <>
               <Button size="lg" className="col-span-2" onClick={printBluetooth} disabled={!ticket || busy !== null}>
                 <Bluetooth className="h-6 w-6" />
@@ -210,9 +218,24 @@ function TicketBody({ initial, onClose, justSold }: { initial: SaleWithItems; on
               </Button>
             </>
           ) : (
-            <Button size="lg" className="col-span-2" onClick={printSystem} disabled={!ticket || busy !== null}>
-              <Printer className="h-6 w-6" /> {busy === 'system' ? 'Preparando…' : 'Imprimir ticket'}
-            </Button>
+            <>
+              <Button size="lg" className="col-span-2" onClick={printSystem} disabled={!ticket || busy !== null}>
+                <Printer className="h-6 w-6" /> {busy === 'system' ? 'Preparando…' : 'Imprimir ticket'}
+              </Button>
+              <Button
+                variant="outline"
+                className="col-span-2"
+                onClick={() => setBtHelp((v) => !v)}
+                aria-expanded={btHelp}
+              >
+                <Bluetooth className="h-5 w-5" /> Imprimir por Bluetooth
+              </Button>
+              {btHelp && !bt.ok && (
+                <div className="col-span-2">
+                  <BluetoothHelp reason={bt.reason} />
+                </div>
+              )}
+            </>
           )}
 
           {isAndroid && ticket && (
