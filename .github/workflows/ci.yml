@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Tipos, lint, pruebas y build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Tipos (tsc)
+        run: npm run type-check
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Pruebas (vitest)
+        run: npm test
+
+      - name: Build de producción (next build)
+        run: npm run build
